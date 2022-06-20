@@ -1,0 +1,791 @@
+---
+title: "Wikipedia Article Web Traffic Time Series Analysis"
+author: "Aaliyah Hanni"
+date: '2022-06-08'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#setup dependencies
+#install.packages("dplyr")
+#install.packages("plyr")
+#install.package("readxl")
+
+library(dplyr)
+library(plyr)
+
+library(astsa)
+library(forecast)
+library(tseries)
+library(lubridate)
+```
+
+## Introduction
+Wikipedia is a free online encyclopedia that has over 6 million articles accessed by users all over the world (Wikimedia Foundation, 2022). This project proposal outlines the exploration of web traffic for a sample of approximately 145,000 Wikipedia articles over a two year period. The goal for this project is to forecast the number of page views over time, and to explore potential relationships between page views, traffic types and article topics. 
+
+### a. Context and Background
+#### Personal Motivation
+The initial motivation for this analysis was to obtain more experience working with large datasets and to compete in my first Kaggle Competition. This specific Kaggle Competition is closed, but Kaggle members are still able to create their own submission to obtain a personal score on how well their forecasting predictions compare to others. Experience competing in a competition using a large dataset, will allow me to grow my professional portfolio of projects that I have completed.
+
+#### Forecasting and Modeling
+The ability to develop a model that forecasts web traffic for a website has many benefits related to networking and resource allocation. Knowing if there are trends or seasonality in website traffic, allows web administrators to allocate the needed bandwidth to optimize performance, while minimizing costs.
+
+#### Identifying Relationships
+Identifying patterns in page views can provide interesting sociological information about potential trends or seasonality in the topics that people are interested in. This can be the beginning of motivation for additional research in why people are interested in specific topics. For example, in the article, ‘Why do people search Wikipedia for information on multiple sclerosis?’, researchers found peaks in google searches for multiple sclerosis correlated with celebrities mentioning it on television, or when new treatments were released (Brigo, et. al, 2018).
+
+### b. Project Goals
+#### 1. Wikipedia Article Page Views Over Time 
+Using daily web traffic information for a sample of Wikipedia articles, we will explore several key properties, such as identifying potential trends or seasonality in the total number of page views of varying articles over time. We will then generate forecast predictions of web traffic for the different articles, and compare predictions against the true number of page views. 
+
+#### 2. Wikipedia Article Page Views Over Time by Traffic Type
+For a given Wikipedia article site visit there are three types of traffic that Wikipedia measures: mobile, desktop, and spider. Mobile and desktop traffic are site visits from individual users through different interfaces, while spider traffic is access to a site from a web-crawler that was developed to collect data. For this analysis, we will explore differences between the types of traffic in Wikipedia articles over time, and identify the types of relationships that exist between them. 
+
+#### 3. Wikipedia Topics Page Views Over Time
+There are natural groupings of Wikipedia articles by topic, such as articles about flowers, sports, or historical events. For this analysis, we will explore the page traffic over time for varying Wikipedia topics. To determine a Wikipedia article topic, we will develop a simple classification model to group articles based on tokenized article titles. Then we will explore relationships in the aggregated sum of page views over time for the varying topics. 
+
+### c. Data Description
+The data set used for this analysis will be the Web Traffic Time Series Forecasting provided by Google Inc, and hosted on Kaggle  (Google Inc., 2017). This dataset contains the daily count of unique user visits to 145,063 Wikipedia articles from July 1st, 2015 to September 10th, 2017. These articles are in multiple languages, have varying grades (i.e article content assessment score), and contain multiple topics. The dataset also groups the counts of the number of articles accessed by each traffic type: all, mobile, desktop, and spider. 
+
+The data was aggregated to give weekly totals of traffic views, for all articles visited, as well by type. To obtain the article topics, a clustering algorithm was applied on the article titles to group them into 1 of 11 defined Wikipedia topics of Art and culture, Geography and places, Health and fitness, History and events, Mathematics and abstractions, Natural sciences and nature, People and self, Philosophy and thinking, Religion and spirituality, Social sciences and society, and Technology and applied sciences
+
+
+## Exploratory Analysis
+
+### 1. Time Series #1: Wikipedia Article Weekly Traffic 
+```{r}
+#import data for time series #1
+#reformatted to have totals in the original excel file
+daily <- read.csv("C:/Users/aaliy/Desktop/MSDS/Time Series/train_2 - daily.csv")
+names(daily) <- c('traffic', 'date')
+
+#aggregate data into weekly totals
+daily$week <- floor_date(as.Date(daily$date, "%m/%d/%Y"), "week")
+weekly <- ddply(daily, "week", summarise, traffic = sum(traffic))
+
+#start: 2015-06-28
+#end: 2017-09-10
+
+#convert into a time series (week)
+weekly_ts = ts(weekly$traffic, start = c(2015, 27), end = c(2017, 37), frequency = 52)
+
+```
+
+#### a. Plot the series
+```{r, echo=TRUE}
+plot(weekly$week, weekly$traffic, main="Weekly Wikipedia Web Traffic", sub="July 1st, 2015 - September 10th, 2017", xlab = 'Week (Month-Day-Year)', ylab = 'Total Traffic Views', type = 'l', xaxt="n", col = "blue")
+
+#format axis
+axis(1, at=weekly$week, format(weekly$week, "%m-%d-%y"), las = 1, gap.axis = 2)
+
+
+```
+
+#### b. Observations
+
+From the time series above, we can see a significant decrease in the total views in both the beginning and ending weeks. This is likely due to problems with the data not differentiating between missing or NULL values, and zero page views. Since these events only occur in the beginning and ending of the time series, it is likely due to how the data was collected. 
+
+There is a peek in the total traffic around late summer of 2016, and this is potentially due to the November 2016 US presidential election, which was very controversial and resulted in large views in pages of the candidates and other political topics included in this data set.
+
+
+#### c. Evaluate Stationarity
+```{r, echo = TRUE}
+#check for stationarity
+kpss.test(weekly_ts, null = "Trend") #p < 0.05
+
+#check the ddifference set for stationarity
+kpss.test(diff(weekly_ts, lag = 1), null = "Trend") #p > 0.05
+
+weekly_ts_diff = diff(weekly_ts, lag = 1)
+```
+Using a Since  Kwiatkowski–Phillips–Schmidt–Shin hypothesis test for stationary series, we observer that the p value is less than the significance threshold of $\alpha = 0.05$. Thus, we reject the null hypothesis that the time series is stationary. Reapplying the stationary test on the difference set, we obtain a p-value greater than our significance level, and thus there is significant evidence to conclude that the difference set is stationary. 
+
+#### d. Investigate seasonality
+```{r, echo=TRUE}
+#using decomposition
+
+#identify trend
+weekly_decomp = decompose(weekly_ts, "additive")
+#weekly_decomp = decompose(weekly_ts_diff, "additive")
+
+#observe trend
+plot(weekly_decomp, sub = "Weekly Wikipedia Web Traffic")
+
+```
+
+From the plots above, we can see that there does not appear to be any strong seasonality in the time series. Reviewing the repetitions in the seasonality, it does appear that it is largely being impacted by the extreme points observed in the data, such as the low views in the beginning and the peak in mid 2016.
+
+#### e. ACF/PACF
+```{r, echo=TRUE}
+#view ACF/PACF plots
+acf2(as.numeric(weekly_ts_diff)) #acf sig @ 4, pacf sig @ 4
+
+
+#reviewing plots of twice differenced ACD/PACF plots
+acf2(as.numeric(diff(weekly_ts_diff), lag = 1)) # acf sig @ 1, 4, 5 , pacf sig @ 1, 2,4
+```
+In the ACF and PACF, we see a significant lag at lag 4, which is a multiple of our weekly seasonality, meaning that we will likely need to include a moving average and autoregressive seasonality term in our ARIMA model.
+
+### 2. Time Series #2: Wikipedia Article Weekly Traffic Types
+``` {r}
+
+#import data for time series #2
+traffic_type <- read.csv("C:/Users/aaliy/Desktop/MSDS/Time Series/train_2 - type.csv")
+#View(traffic_type)
+names(traffic_type) <- c('date', 'desktop', 'mobile', 'spider')
+
+traffic_type$week <- floor_date(as.Date(traffic_type$date, "%m/%d/%Y"), "week")
+traffic_type_week <- ddply(traffic_type, "week", summarise, desktop = sum(desktop), mobile = sum(mobile), spider = sum(spider))
+
+#convert into a time series (week)
+mobile = ts(traffic_type_week$mobile, start = c(2015, 27), end = c(2017, 37), frequency = 52)
+desktop = ts(traffic_type_week$desktop, start = c(2015, 27), end = c(2017, 37), frequency = 52)
+spider = ts(traffic_type_week$spider, start = c(2015, 27), end = c(2017, 37), frequency = 52)
+
+```
+
+#### a. Plot the series
+```{r, echo=TRUE}
+#min(traffic_type_week$spider) #2069957
+#max(traffic_type_week$desktop) #745640170
+plot(traffic_type_week$week,traffic_type_week$desktop, main="Weekly Wikipedia Web Traffic by Type", sub="July 1st, 2015 - September 10th, 2017", xlab = 'Week (Month-Day-Year)', ylab = 'Total Traffic Views', type = 'l', xaxt="n", col = "green", ylim = c(2000000,750000000 ), xlim = c(min(traffic_type_week$week), max(traffic_type_week$week)))
+
+lines(traffic_type_week$week,traffic_type_week$mobile, col ="blue")
+lines(traffic_type_week$week,traffic_type_week$spider, col ="orange")
+
+legend(x = "topright", legend=c("Desktop Traffic", "Mobile Traffic", "Spider Traffic"), col = c("green", "blue", "orange"), lty=1:3)
+#format axis
+
+axis(1, at=traffic_type_week$week, format(traffic_type_week$week, "%m-%d-%y"), las = 1, gap.axis = 2)
+
+
+```
+
+#### b. Observations
+
+Although the large peaks and valleys are consistent between the three types of web traffic, there is a large magnitude in range and variance of each traffic type. Desktop is the largest web traffic, with few exceptions, while the spider traffic is very minimal and consistently magnitudes of views lower than the other two traffic types. 
+
+In all three types, there exists the same patterns observed above in the overall traffic views, of steep declines in the beginning and ending of the time series, and a large peak around the middle of 2016.
+
+#### c. Evaluate Stationarity
+```{r, echo = TRUE}
+#check each type for stationary
+
+#desktop
+kpss.test(desktop, null = "Trend") #p < 0.05
+#check the difference set for stationary
+kpss.test(diff(desktop, lag = 1), null = "Trend") #p > 0.05
+desktop_diff = diff(desktop, lag = 1)
+
+#mobile
+kpss.test(mobile, null = "Trend") #p < 0.05
+#check the difference set for stationary
+kpss.test(diff(mobile, lag = 1), null = "Trend") #p > 0.05
+mobile_diff = diff(mobile, lag = 1)
+
+#spider
+kpss.test(spider, null = "Trend") #p < 0.05
+#check the difference set for stationary
+kpss.test(diff(spider, lag = 1), null = "Trend") #p > 0.05
+spider_diff = diff(spider, lag = 1)
+
+```
+
+Using a Since  Kwiatkowski–Phillips–Schmidt–Shin hypothesis test for all three stationary series, we observer that the p value is less than the significance threshhold of $\alpha = 0.05$. Thus, we reject the null hypothesis that the time series are stationary. Reapplying the stationary test on the difference series, we obtain a p-value greater than our significance level, and thus there is significant evidence to conclude that the difference series are each stationary. 
+
+#### d. Investigate seasonality
+```{r, echo=TRUE}
+#using decomposition
+
+#identify trend
+desktop_decomp = decompose(desktop, "additive") #same pattern as cumulative
+#observe trend
+plot(desktop_decomp)
+
+#identify trend
+mobile_decomp = decompose(mobile, "additive") #different from peak, repeats twice, nonseasonal
+#observe trend
+plot(mobile_decomp)
+
+#identify trend
+spider_decomp = decompose(spider, "additive") #appears over sensitive to peaks
+#observe trend
+plot(spider_decomp)
+
+```
+
+From the plots above, we can see that there does not really appear to be any seasonality. In the desktop traffic time series, the pattern is similar to the total traffic views, in that it is sensitive to the extreme observations. The mobile traffic shows a different pattern that is less sensitive to the extremes, but still nonseasonal. The spider traffic pattern appears to be the most seasonal, but still does not appear to show a strong consistent seasonality. 
+
+
+#### e. ACF/PACF
+```{r, echo=TRUE}
+#view ACF/PACF plots of each
+
+#desktop
+acf2(as.numeric(desktop_diff)) #acf sig @ 4, pacf sig @ 4
+
+#mobile
+acf2(as.numeric(mobile_diff)) #acf sig @ 7 , pacf sig @ 7
+
+#spider
+acf2(as.numeric(spider_diff)) #acf sig @ 1,2 , pacf sig @ 1,2
+
+```
+
+For desktop traffic the ACF and PACF shows a significant lag at lag 4, which implies we will likely need to include a moving average and autoregressive seasonality term in our ARIMA model.
+For mobile traffic the ACF and PACF shows a significant lag at lag 7, which implies we will likely need to include a moving average and autoregressive seasonality term in our ARIMA model.
+For spider traffic the ACF and PACF shows a significant lag at lag 1 and 2, which implies we will likely need to include a moving average and autoregressive seasonality term in our ARIMA model.
+
+### 3. Time Series #3: Wikipedia Article Weekly Traffic Topics
+```{r}
+
+#import data for time series #3
+topic <- read.csv("C:/Users/aaliy/Desktop/MSDS/Time Series/train_2 - topic.csv")
+#View(topic)
+
+topic_list <- c("Art and culture", "Geography and places", "Health and fitness", "History and events", "Mathematics and abstractions", "Natural sciences and nature", "People and self", "Philosophy and thinking", "Religion and spirituality", "Social sciences and society", "Technology and applied sciences")
+
+topic_list_abbr <- c("art", "geo", "heal", "hist", "math", "nat", "ppl", "phil", "rel", "soc", "tech")
+
+names(topic) <- c("date", topic_list_abbr)
+
+
+topic$week <- floor_date(as.Date(topic$date, "%m/%d/%Y"), "week")
+topic_week <- ddply(topic, "week", summarise, 
+                    art = sum(art), geo = sum(geo), heal = sum(heal),
+                    hist = sum(hist), math = sum(math), nat = sum(nat), 
+                    ppl = sum(ppl), phil = sum(phil), rel = sum(rel), 
+                    soc = sum(soc), tech = sum(tech))
+
+
+#convert into a time series by topic
+ts <- lapply(topic_list_abbr, function(i){
+  val = noquote(i)
+  #v = ts(topic_week$v, start = c(2015, 27), end = c(2017, 37), frequency = 52)
+  assign(val, ts(topic_week[i], start = c(2015, 27), end = c(2017, 37), frequency = 52))
+  
+})
+
+names(ts) <- topic_list_abbr
+
+#ts$art
+#topic_list_abbr
+
+```
+
+#### a. Plot the series
+```{r, echo=TRUE}
+#min(traffic_type_week$spider) #2069957
+#max(traffic_type_week$desktop) #745640170
+
+plot(topic_week$week,topic_week$art, main="Weekly Wikipedia Web Traffic by Topic", sub="July 1st, 2015 - September 10th, 2017", xlab = 'Week (Month-Day-Year)', ylab = 'Total Traffic Views', type = 'l', xaxt="n", col = "green", ylim = c(500000,85000000 ), xlim = c(min(topic_week$week), max(topic_week$week)))
+
+lines(topic_week$week,topic_week$geo, col ="dark green")
+lines(topic_week$week,topic_week$heal, col ="dark orange")
+lines(topic_week$week,topic_week$hist, col ="yellow")
+lines(topic_week$week,topic_week$math, col ="purple")
+lines(topic_week$week,topic_week$nat, col ="red")
+lines(topic_week$week,topic_week$ppl, col ="brown")
+lines(topic_week$week,topic_week$phil, col ="cyan")
+lines(topic_week$week,topic_week$rel, col ="gold")
+lines(topic_week$week,topic_week$soc, col ="light blue")
+lines(topic_week$week,topic_week$tech, col ="blue")
+
+colors <- c("green", "dark green", "dark orange", "yellow", "purple", "red", "brown", "cyan", "gold", "light blue", "blue")
+  
+legend(x = "topleft", legend=topic_list, col = colors, lty=1:3)
+#format axis
+
+axis(1, at=topic_week$week, format(topic_week$week, "%m-%d-%y"), las = 1, gap.axis = 2)
+
+```
+#### b. Observations
+Given the amount of data and variation that is shown, it is difficult to observe any significant patterns. There does appear to be a somewhat consistent range of views depending on topic, with some peaks occurring in mathematics, technology, philosophy and art. 
+
+#### c. Evaluate Stationarity
+```{r, echo = TRUE}
+#check each type for stationary
+for (i in 1:length(ts)) {
+  print(topic_list[i])
+  print(kpss.test(ts[[i]], null = "Trend")$p.value)
+  #kpss.test(i, null = "Trend") #p < 0.05
+}
+
+#check the difference set for stationary
+for (i in 1:length(ts)) {
+  print(topic_list[i])
+  print(kpss.test(diff(ts[[i]], lag = 1), null = "Trend")$p.value)
+}
+
+
+```
+
+Using a Kwiatkowski–Phillips–Schmidt–Shin hypothesis test for stationary series, we observe a split in the two topics. In the first group, we find that the p-value > 0.5, and thus we conclude that the following topics are stationary: Natural sciences and nature, People and self, Religion and spirituality, Social sciences and society.
+
+For the second group, we observe that the p-value < 0.5, thus apply a differencing and retest the stationarity and find that for the following topics there is siginificant evidence to conclude that the differenced time series are stationary: Art and culture, Geography and places, Health and fitness, History and events, Mathematics and abstractions, Philosophy and thinking, Religion and spirituality, Social sciences and society, Technology and applied sciences. 
+
+#### d. Investigate seasonality
+```{r, echo=TRUE}
+#using decomposition
+
+for (i in 1:length(ts)) {
+
+  #non-differenced groups
+  #Natural sciences and nature, People and self, Religion and spirituality, Social sciences and   society.
+  # Index: 6, 7, 9, 10
+  if (i %in% c(6, 7, 9, 10)){
+    print(i)
+    print(topic_list[i])
+    plot(decompose(ts[[i]], "additive"))
+  }
+  
+  #differenced groups
+  #Art and culture, Geography and places, Health and fitness, History and events, Mathematics and abstractions, Philosophy and thinking, Religion and spirituality, Social sciences and society, Technology and applied sciences. 
+  # Index: 1, 2, 3, 4, 5, 8, 11 
+  if (i %in% c(1, 2, 3, 4, 5, 8, 11)){
+    print(i)
+    print(topic_list[i])
+    plot(decompose(diff(ts[[i]], lag = 1), "additive"))
+  }
+}
+
+
+```
+
+Using decomposition to observe if there is seasonality within the various time series, we observe another splitting between the two groups, of almost half that display strong evidence of seasonailty, and half that do not appear to have any seasonality. 
+
+Stationary: 
+    History and events
+    Mathematics and abstractions
+    Natural sciences and nature
+    People and self
+    Philosophy and thinking
+    Religion and spirituality
+
+Non-stationary:
+    Art and culture
+    Geography and places
+    Health and fitness
+    Social sciences and society
+    Technology and applied sciences
+
+
+#### e. ACF/PACF
+```{r, echo=TRUE}
+#view ACF/PACF plots of each
+
+#applying acf/pacf to differenced values
+for (i in 1:length(ts)) {
+
+  #non-differenced groups
+  #Natural sciences and nature, People and self, Religion and spirituality, Social sciences and   society.
+  # Index: 6, 7, 9, 10
+  if (i %in% c(6, 7, 9, 10)){
+    print(topic_list[i])
+    acf2(as.numeric(ts[[i]]))
+  }
+  
+  #differenced groups
+  #Art and culture, Geography and places, Health and fitness, History and events, Mathematics and abstractions, Philosophy and thinking, Religion and spirituality, Social sciences and society, Technology and applied sciences. 
+  # Index: 1, 2, 3, 4, 5, 8, 11 
+  if (i %in% c(1, 2, 3, 4, 5, 8, 11)){
+    print(topic_list[i])
+    acf2(as.numeric(diff(ts[[i]], lag = 1)))
+  }
+}
+
+```
+
+The ACF/PACF plots for the differenced and non-differenced topic series show a lot of varition in signification lags. The significant lags are noted for each topic below:
+
+  Art and culture: ACF is sinusoidal 1- 10, PACF is 1, 2, 3
+  Geography and places: ACF 1, PACF is sinusoidal 1, 2, 3
+  Health and fitness: ACF 1, PACF 3
+  History and events: ACF 1, 3, 4, PACF 2
+  Mathematics and abstractions: ACF 1, 10, 16, PACF is sinusoidal 1, 2, 9, 15
+  Natural sciences and nature: ACF 2, PACF 1
+  People and self: ACF is descending 1-9, indicative that perhaps some stationary exists in plot, PACF: 1
+  Philosophy and thinking: ACF 0, PACF 0
+  Religion and spirituality: ACF 2, PACF 1
+  Social sciences and society: ACF 1, PACF 2
+  Technology and applied sciences: ACF 1, PACF 2
+
+
+## ARIMA Modeling 
+
+### 1. Wikipedia Article Page Views Over Time 
+```{r, echo = TRUE}
+#split into train and test
+start(weekly_ts) #2015, 6
+end(weekly_ts) #2017, 8
+
+#2 complete years in train
+weekly_ts_train = window(weekly_ts, end = c(2017, 27))
+
+#10 weeks in test
+weekly_ts_test = window(weekly_ts, start = c(2017, 28))
+
+```
+
+#### a. Fit ARIMA model
+```{r, echo=TRUE}
+
+#Using auto arima to find the best fit model
+auto.arima(as.numeric(weekly_ts_train), seasonal = FALSE) # ARIMA(0,1,0)
+
+#Plot the predictions for the ARIMA(0,1,0)
+sarima(weekly_ts_train, p=0, d=1, q=0) #AIC = 39
+ts_1 = sarima(weekly_ts_train, p=0, d=1, q=0) 
+
+#Plot the predictions for the ARIMA(4,1,4)
+sarima(weekly_ts_train, p=4, d=2, q=4) #AIC = 39
+ts_2 = sarima(weekly_ts_train, p=4, d=2, q=4)
+
+```
+
+The auto ARIMA function predicts that the best model is ARMIA(0,1,0). Reviewing the residual plots of this ARIMA model, we obtain a random ACF of residuals, significant p-values for the Ljung-Box, and a Q-Q plot that suggest some normality of standard residuals. 
+
+In contrast, including a lag of 4 to both the moving average and autoregressive terms, as suggested by the ACF/PACF plots, we obtain a beautifully random ACF and standardized residuals, all of the p-values in the Ljung-Box are significant, and we observe slightly better normality of standardized residuals in our Q-Q plot. 
+
+#### b. Generate Models
+```{r, echo=TRUE}
+
+#Model 1 arima(0,1,0)
+#predict 10 weeks out (the size of the test set)
+weekly_ts_for1 = sarima.for(weekly_ts_train, p=0, d=1, q=0, n.ahead=10)
+
+#include test lines
+lines(weekly_ts_test, type='o')
+
+#Model 1 arima(4,2,4)
+#predict 10 weeks out (the size of the test set)
+weekly_ts_for2 = sarima.for(weekly_ts_train, p=4, d=2, q=4, n.ahead=10)
+
+#include test lines
+lines(weekly_ts_test, type='o')
+
+```
+
+Comparing the models generated above, for ARIMA(0,1,0) model, the test values appear near the predicted line and all values are within a single standard error of our predictions. In contrast, the ARIMA(4,2,4) model appears to be a poor fit towards the end of the predictions. 
+
+#### c. Model Evaluation
+```{r, echo=TRUE}
+#model 1
+weekly_ts_for1$pred
+weekly_ts_for1$se
+accuracy(weekly_ts_for1$pred, weekly_ts_test)
+
+#model 2
+weekly_ts_for2$pred
+weekly_ts_for2$se
+accuracy(weekly_ts_for2$pred, weekly_ts_test)
+```
+
+For the first model we obtain a ME = 3,615,929, RMSE = 31,413,006, MAE = 23,344,146.
+For the second model we obtain a ME = 58,206,409, RMSE = 88,142,731, MAE = 58,899,814.
+From these evaluation metrics we can see that the first model ARIMA(0,1,0) performs significantly better than the second.
+
+### 2. Wikipedia Article Page Views Over Time by Traffic Type
+```{r, echo = TRUE}
+#split into train and test
+#desktop
+#2 complete years in train
+desktop_train = window(desktop, end = c(2017, 27))
+#10 weeks in test
+desktop_test = window(desktop, start = c(2017, 28))
+
+#mobile
+#2 complete years in train
+mobile_train = window(mobile, end = c(2017, 27))
+#10 weeks in test
+mobile_test = window(mobile, start = c(2017, 28))
+
+#spider
+#2 complete years in train
+spider_train = window(spider, end = c(2017, 27))
+#10 weeks in test
+spider_test = window(spider, start = c(2017, 28))
+
+```
+
+#### a. Fit ARIMA model
+```{r, echo=TRUE}
+#desktop
+#Using auto arima to find the best fit model
+auto.arima(as.numeric(desktop_train), seasonal = FALSE) # ARIMA(2, 1, 1)
+
+sarima(desktop_train, p=2, d=1, q=1)  #AIC = 38
+sarima(desktop_train, p=4, d=2, q=4) #AIC = 38
+desktop_arima = sarima(desktop_train, p=4, d=2, q=4)
+
+
+#mobile
+#Using auto arima to find the best fit model
+auto.arima(as.numeric(mobile_train), seasonal = FALSE) # ARIMA(0, 1, 0)
+
+sarima(mobile_train, p=0, d=1, q=0)  #AIC = 36
+sarima(mobile_train, p=7, d=2, q=7) #AIC = 36
+mobile_arima = sarima(mobile_train, p=7, d=2, q=7)
+
+
+#spider
+#Using auto arima to find the best fit model
+auto.arima(as.numeric(spider_train), seasonal = FALSE) # ARIMA(0, 1, 2)
+
+sarima(spider_train, p=0, d=1, q=2)  #AIC = 34
+sarima(spider_train, p=2, d=2, q=2) #AIC = 34
+spider_arima = sarima(spider_train, p=2, d=2, q=2)
+
+```
+
+#### b. Generate model
+```{r, echo=TRUE}
+#desktop
+desktop_for = sarima.for(desktop_train, p=4, d=2, q=4, n.ahead=10)
+lines(desktop_test, type='o')
+
+#mobile
+mobile_for = sarima.for(mobile_train, p=7, d=2, q=7, n.ahead=10)
+lines(mobile_test, type='o')
+
+#spider
+spider_for = sarima.for(spider_train, p=2, d=2, q=2, n.ahead=10)
+lines(spider_test, type='o')
+```
+
+#### c. Evaluate model
+```{r, echo=TRUE}
+#desktop
+accuracy(desktop_for$pred, desktop_test)
+
+#mobile
+accuracy(mobile_for$pred, mobile_test)
+
+#spider
+accuracy(spider_for$pred, spider_test)
+```
+For the desktop model, visualizing the model predictions it appears to be fairly accurate. Evaluating the error metrics we obtain the following: ME = 1,275,340, RMSE = 9,965,231, MAE = 7,177,156.
+
+For the mobile model, the model visually appears to poorly estimate the long term shape of the date. Reviewing the error metrics we obtain the following: ME = 8,571,501, RMSE =  14,110,709, and MAE = 10,651,123.
+
+For the spider model, the predictions fail to follow the pattern of the actual data, and even fall outside the two standard error range. The error metrics yield the following: ME = 1,989,710, RMSE = 9,519,916, and MAE = 5,897,163.
+
+
+#### d. Multivariate Analysis
+```{r, echo=TRUE}
+
+
+pairs(~desktop+mobile+spider, data = traffic_type_week,
+   main="Wikipedia Type Page View Scatterplot Matrix")
+
+#setup cross correlation
+ccf(x = desktop, y = mobile, main="Cross Correlation of Desktop and Mobile Page Views")
+
+#plot lad and lead
+lag2.plot(desktop, mobile, max.lag = 5, corr = TRUE)
+#lead.plot(desktop, mobile, max.lead = 1, corr = TRUE)
+
+#regression
+desktop_lm = lm(desktop ~ mobile, data = traffic_type_week)
+summary(desktop_lm)
+
+acf2(desktop_lm$residuals)
+
+```
+
+
+### 3. Wikipedia Topics Page Views Over Time
+
+#### a. Fit ARIMA model
+```{r, echo = T}
+#split into train/test
+#2 complete years in train
+ts_train = window(ts, end = c(2017, 27))
+#10 weeks in test
+#ts_test = window(ts, start = c(2017, 28))
+
+#fit ARIMA model for each topic
+for (i in 1:length(ts_train)) {
+  print(topic_list[i])
+  print(auto.arima(as.numeric(ts_train[[i]]), seasonal = FALSE))
+}
+
+```
+
+#### b. Generate Models
+For simplicity, a auto arima function was applied to extract the best models for all 11 topics. The below list summarizes the best ARIMA model estimated for each topic. 
+
+    Art and culture:                    ARIMA(0,1,1)
+    Geography and places:               ARIMA(1,0,0)
+    Health and fitness:                 ARIMA(0,0,0)
+    History and events:                 ARIMA(2,0,0)
+    Mathematics and abstractions:       ARIMA(1,0,0)
+    Natural sciences and nature:        ARIMA(2,1,1)
+    People and self:                    ARIMA(1,1,1)
+    Philosophy and thinking:            ARIMA(1,0,0)
+    Religion and spirituality:          ARIMA(1,0,0)
+    Social sciences and society:        ARIMA(0,0,1)
+    Technology and applied sciences:    ARIMA(0,1,1)
+
+#### c. Model Evaluation
+```{r, echo=TRUE}
+
+#Art and culture:                    ARIMA(0,1,1)
+#split into train/test
+art = window(ts$art, end = c(2017, 27))
+ts_test_art = window(ts$art, start = c(2017, 28))
+#apply model & calc performance
+accuracy(sarima.for(art, p=0, d=1, q=1, n.ahead=10)$pred, ts_test_art)
+lines(ts_test_art, type = 'o')
+
+
+#Geography and places:               ARIMA(1,0,0)
+#split into train/test
+geography = window(ts$geo, end = c(2017, 27))
+ts_test_art = window(ts$geo, start = c(2017, 28))
+#apply model & calc performance
+accuracy(sarima.for(geography, p=1, d=0, q=0, n.ahead=10)$pred, ts_test_art)
+lines(ts_test_art, type = 'o')
+
+
+#Health and fitness:                 ARIMA(0,0,0)
+#split into train/test
+health = window(ts$heal, end = c(2017, 27))
+ts_test_art = window(ts$heal, start = c(2017, 28))
+#apply model & calc performance
+accuracy(sarima.for(health, p=0, d=0, q=0, n.ahead=10)$pred, ts_test_art)
+lines(ts_test_art, type = 'o')
+
+
+#History and events:                 ARIMA(2,0,0)
+#split into train/test
+history = window(ts$hist, end = c(2017, 27))
+ts_test_art = window(ts$hist, start = c(2017, 28))
+#apply model & calc performance
+accuracy(sarima.for(history, p=2, d=0, q=0, n.ahead=10)$pred, ts_test_art)
+lines(ts_test_art, type = 'o')
+
+
+#Mathematics and abstractions:       ARIMA(1,0,0)
+#split into train/test
+mathematics = window(ts$math, end = c(2017, 27))
+ts_test_art = window(ts$math, start = c(2017, 28))
+#apply model & calc performance
+accuracy(sarima.for(mathematics, p=1, d=0, q=0, n.ahead=10)$pred, ts_test_art)
+lines(ts_test_art, type = 'o')
+
+#Natural sciences and nature:        ARIMA(2,1,1)
+#split into train/test
+Nature = window(ts$nat, end = c(2017, 27))
+ts_test_art = window(ts$nat, start = c(2017, 28))
+#apply model & calc performance
+accuracy(sarima.for(Nature, p=2, d=1, q=1, n.ahead=10)$pred, ts_test_art)
+lines(ts_test_art, type = 'o')
+
+#People and self:                    ARIMA(1,1,1)
+#split into train/test
+people = window(ts$ppl, end = c(2017, 27))
+ts_test_art = window(ts$ppl, start = c(2017, 28))
+#apply model & calc performance
+accuracy(sarima.for(people, p=1, d=1, q=1, n.ahead=10)$pred, ts_test_art)
+lines(ts_test_art, type = 'o')
+
+#Philosophy and thinking:            ARIMA(1,0,0)
+#split into train/test
+philosophy = window(ts$phil, end = c(2017, 27))
+ts_test_art = window(ts$phil, start = c(2017, 28))
+#apply model & calc performance
+accuracy(sarima.for(philosophy, p=1, d=0, q=0, n.ahead=10)$pred, ts_test_art)
+lines(ts_test_art, type = 'o')
+
+#Religion and spirituality:          ARIMA(1,0,0)
+#split into train/test
+religion = window(ts$rel, end = c(2017, 27))
+ts_test_art = window(ts$rel, start = c(2017, 28))
+#apply model & calc performance
+accuracy(sarima.for(religion, p=1, d=0, q=0, n.ahead=10)$pred, ts_test_art)
+lines(ts_test_art, type = 'o')
+
+#Social sciences and society:        ARIMA(0,0,1)
+#split into train/test
+society = window(ts$soc, end = c(2017, 27))
+ts_test_art = window(ts$soc, start = c(2017, 28))
+#apply model & calc performance
+accuracy(sarima.for(society, p=0, d=0, q=1, n.ahead=10)$pred, ts_test_art)
+lines(ts_test_art, type = 'o')
+
+#Technology and applied sciences:    ARIMA(0,1,1)
+#split into train/test
+technology = window(ts$tech, end = c(2017, 27))
+ts_test_art = window(ts$tech, start = c(2017, 28))
+#apply model & calc performance
+accuracy(sarima.for(technology, p=0, d=1, q=1, n.ahead=10)$pred, ts_test_art)
+lines(ts_test_art, type = 'o')
+
+    
+```
+
+## Additional Analysis
+```{r, echo=TRUE}
+#split into train & test
+#convert into a time series (week)
+#plot frequency
+freq = mvspec(weekly_ts_train, detrend = FALSE, spans = 3)          
+plot(freq, xlim = c(0, 6), xlab = "Frequency")
+
+#fourier arima model
+weekly_fr = arima(weekly_ts_train, order = c(0, 1, 0), xreg =  fourier(weekly_ts_train, K = 6)) 
+
+
+weekly_fr_pred = predict(weekly_fr, newxreg = fourier(weekly_ts_train, K = 6, h = 10), n.ahead = 10)
+                         
+#max(weekly_fr_pred$pred)#1426367996
+
+plot(weekly_ts_test, ylim = c(980000000, 1426367996))
+lines(weekly_fr_pred$pred, col = "red")
+
+
+accuracy(weekly_fr_pred$pred, weekly_ts_test)
+
+```
+
+Applying a fourier series model with an ARIMA error, we obtain a very poor estimation of the model, having the following evaluation metrics of ME = -273035855, RMSE = 300474220, MAE = 273035855 
+
+#### d. Multivariate Analysis
+```{r, echo=TRUE}
+
+pairs(~art+geo+heal+hist+math+nat+ppl+phil+rel+soc+tech, data = topic_week, pch='.',
+   main="Wikipedia Topic Page View Scatterplot Matrix")
+
+#Math & Tech
+#setup cross correlation
+ccf(x = ts$math, y = ts$tech, main="Cross Correlation of Math and Tech Page Views")
+
+#plot lad and lead
+lag2.plot(ts$math, ts$tech, max.lag = 1 , corr = TRUE)
+#lead.plot(desktop, mobile, max.lead = 1, corr = TRUE)
+
+#regression
+math_lm = lm(math ~ tech, data = ts)
+summary(math_lm)
+
+acf2(math_lm$residuals)
+
+#Art & Phil
+#setup cross correlation
+ccf(x = ts$art, y = ts$phil, main="Cross Correlation of Art and Philosophy Page Views")
+
+#plot lad and lead
+lag2.plot(ts$art, ts$phil, max.lag = 1, corr = TRUE)
+#lead.plot(desktop, mobile, max.lead = 1, corr = TRUE)
+
+#regression
+art_lm = lm(art ~ phil, data = ts)
+summary(art_lm)
+
+acf2(art_lm$residuals)
+
+
+```
+
