@@ -1,36 +1,48 @@
 # Wikipedia Article Web Traffic Time Series Analysis
 ### Forecasting future views of Wikipedia pages by total traffic, types, and topics
 
+Author: Aaliyah Hänni
+
 Created Date: June 8, 2022
-Authored By: Aaliyah Hänni
 
 ## Overview
 This project outlines the exploration of web traffic for a sample of approximately 145,000 Wikipedia articles over a two year period. The attached report outlines several forecasts for the weekly number of page views over time, and explores potential relationships between page views, traffic types and article topics.
-![weekly_topics](https://github.com/aaliyahfiala42/Wiki_Time_Series_Analysis/blob/main/images/weekly_topics.jpg)
 
+<p align="center">
+  <img src="/images/weekly_topics.jpg" width="750">
+</p>
 
 ## Project Goals
 ### Wikipedia Article Page Views Over Time 
 Using daily web traffic information for a sample of Wikipedia articles, we will explore several key properties, such as identifying potential trends or seasonality in the total number of page views of varying articles over time. We will then generate forecast predictions of web traffic for the different articles, and compare predictions against the true number of page views.
 
-![weekly_total](https://github.com/aaliyahfiala42/Wiki_Time_Series_Analysis/blob/main/images/weekly_total.jpg)
+<p align="center">
+  <img src="/images/weekly_total.jpg" width="750">
+</p>
 
 The best forecast found for this time series was an Arima(0,1,0) model, which shows the following forecast: 
 
-![total_forcast](https://github.com/aaliyahfiala42/Wiki_Time_Series_Analysis/blob/main/images/total_forecast.jpg)
+<p align="center">
+  <img src="/images/total_forecast.jpg" width="750">
+</p>
 
 ### Wikipedia Article Page Views Over Time by Traffic Type
 For a given Wikipedia article site visit there are three types of traffic that Wikipedia measures: mobile, desktop, and spider. Mobile and desktop traffic are site visits from individual users through different interfaces, while spider traffic is access to a site from a web-crawler that was developed to collect data. For this analysis, we explore differences between the types of traffic in Wikipedia articles over time, and identify the types of relationships that exist between them.
-![weekly_type](https://github.com/aaliyahfiala42/Wiki_Time_Series_Analysis/blob/main/images/weekly_type.jpg)
 
-![type_scatterplot](https://github.com/aaliyahfiala42/Wiki_Time_Series_Analysis/blob/main/images/type_scatterplot.jpg)
+<p align="center">
+  <img src="/images/weekly_type.jpg" width="750">
+</p>
 
-![desktop_forecast](https://github.com/aaliyahfiala42/Wiki_Time_Series_Analysis/blob/main/images/desktop_forecast.jpg)
+<p align="center">
+  <img src="/images/type_scatterplot.jpg" width="750">
+</p>
 
 ### Wikipedia Topics Page Views Over Time
-There are natural groupings of Wikipedia articles by topic, such as articles about flowers, sports, or historical events. For this analysis, we will explore the page traffic over time for varying Wikipedia topics. To determine a Wikipedia article topic, we will develop a simple classification model to group articles based on tokenized article titles. Then we will explore relationships in the aggregated sum of page views over time for the varying topics. The topics were determined using Wikipedia’s defined ![WikiProject Lists of Topics](https://en.wikipedia.org/wiki/Wikipedia:WikiProject_Lists_of_topics).
+There are natural groupings of Wikipedia articles by topic, such as articles about flowers, sports, or historical events. For this analysis, we will explore the page traffic over time for varying Wikipedia topics. To determine a Wikipedia article topic, we will develop a simple classification model to group articles based on tokenized article titles. Then we will explore relationships in the aggregated sum of page views over time for the varying topics. The topics were determined using Wikipedia’s defined WikiProject Lists of Topics (source: https://en.wikipedia.org/wiki/Wikipedia:WikiProject_Lists_of_topics).
 
-![topic_scatterplot](https://github.com/aaliyahfiala42/Wiki_Time_Series_Analysis/blob/main/images/topic_scatterplot.jpg)
+<p align="center">
+  <img src="/images/topic_scatterplot.jpg" width="750">
+</p>
 
 ## Data
 The data set used for this analysis will be the Web Traffic Time Series Forecasting provided by Google Inc, and hosted on Kaggle  (Google Inc., 2017). This dataset contains the daily count of unique user visits to 145,063 Wikipedia articles from July 1st, 2015 to September 10th, 2017. These articles are in multiple languages, have varying grades (i.e article content assessment score), and contain multiple topics. The dataset also groups the counts of the number of articles accessed by each traffic type: all, mobile, desktop, and spider. 
